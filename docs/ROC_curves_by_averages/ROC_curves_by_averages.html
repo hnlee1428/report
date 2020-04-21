@@ -210,6 +210,75 @@ $(document).ready(function () {
 <li><p>(0, 1) and (1, 0) are excluded from cutoffs since they are not compatible with <code>randomForest</code>.</p></li>
 <li><p>Different priors make different posterior probabities, so it looks different from random forest method using cutoffs.</p></li>
 </ul>
+</div>
+<div id="how-can-roc-curves-be-constructed-in-a-consistent-way-to-how-roc-curve-is-plotted-for-optimal-rule." class="section level4">
+<h4>How can ROC curves be constructed in a consistent way to how ROC curve is plotted for optimal rule.</h4>
+<p>We plotted a ROC curve for optimal rule by assigining different weights directly to (1 - sensitivity), and (1 - specificity). It was easy mainly because optimal rule is constructed by minimizing the weighted sum of those probabilities. However, it’s not intuitive to come up with the same rule for LDA, QDA, and RF based on feature difference. We should consider possible candidates to make the rules comparable to that of optimal rule.  </p>
+<p>Note that RF using feature difference classifies each pair of data into two groups (matching and non-matching) while LDA and QDA classify data into their own classes by choosing the maximum posterior class probability, and then whether each pair of data belong to the same class or not is determined depending on the classified class. With that being said, we can think of available types of “tuning parameter” for LDA and QDA, and RF based on feature difference, considering what can be adjusted to construct ROC curves.<br />
+- <code>RandomForest</code>: We can adjust <code>cutoff</code>, <code>classwt</code>, <code>strata</code>, and <code>sampsize</code>. <code>strata</code> and <code>sampsiz</code> invlove with adjusting the number of pairs from matching and non-matching groups. I have used <code>cutoff</code> for this report so that a single prediction is made, and mathing or non-matching is determined by the maximum ratio of its scores to different sets of cutoff.</p>
+<p>Now I think using <code>classwt</code> would be more fair in that decision areas of optimal rule differs with different weights. Using <code>classwt</code> seems to be called Weighted Random Forest according to <a href="https://statistics.berkeley.edu/sites/default/files/tech-reports/666.pdf">this paper</a>. One issue I found is that we have to find a proper range of <code>classwt</code> that needs not to be added to 1, but it’s not easy. That’s because it largely varies depending on parameters of distributions as well as the proportion of the number of matching and non-matching groups. The following is an example.</p>
+<pre class="r"><code>B = 100; N = 1; G = 2;
+mu.vec = c(1, 1.5)
+sigma.vec = c(1, 2) 
+prior.p = c(1,1)/2 
+n = 100; n.test = 20; n.trees = 100
+
+
+a &lt;- randomForest::randomForest(x = as.matrix(paired.train$diff.X), 
+             y = as.factor(paired.train$group.matching),
+             xtest = as.matrix(paired.test$diff.X),
+             ntree = n.trees,
+             classwt = c(1e-04, 1e+04),
+             mtry = 1,
+             type = &quot;classification&quot;)#$test$predicted
+
+
+b &lt;- randomForest::randomForest(x = as.matrix(paired.train$diff.X), 
+             y = as.factor(paired.train$group.matching),
+             ntree = n.trees,
+             xtest = as.matrix(paired.test$diff.X),
+             classwt = c(1e+04, 1e-04),
+             mtry = 1,
+             type = &quot;classification&quot;)
+
+
+head(cbind(a$test$votes, b$test$votes)) #Weights greatly affect the outcome</code></pre>
+<pre><code>##      0 1 0 1
+## [1,] 0 1 1 0
+## [2,] 0 1 1 0
+## [3,] 0 1 1 0
+## [4,] 0 1 1 0
+## [5,] 0 1 1 0
+## [6,] 0 1 1 0</code></pre>
+<pre class="r"><code>A &lt;- randomForest::randomForest(x = as.matrix(paired.train$diff.X), 
+                  y = as.factor(paired.train$group.matching),
+                  xtest = as.matrix(paired.test$diff.X),
+                  ntree = n.trees,
+                  classwt = c(1, 100),
+                  mtry = 1,
+                  type = &quot;classification&quot;)#$test$predicted
+
+
+B &lt;- randomForest::randomForest(x = as.matrix(paired.train$diff.X), 
+                  y = as.factor(paired.train$group.matching),
+                  ntree = n.trees,
+                  xtest = as.matrix(paired.test$diff.X),
+                  classwt = c(100, 1),
+                  mtry = 1,
+                  type = &quot;classification&quot;)
+
+
+head(cbind(A$test$votes, B$test$votes)) #Weights rarely affect the outcome</code></pre>
+<pre><code>##         0    1    0    1
+## [1,] 1.00 0.00 1.00 0.00
+## [2,] 0.01 0.99 0.02 0.98
+## [3,] 1.00 0.00 1.00 0.00
+## [4,] 0.74 0.26 0.71 0.29
+## [5,] 0.96 0.04 0.95 0.05
+## [6,] 0.65 0.35 0.60 0.40</code></pre>
+<ul>
+<li>LDA and QDA: I have used different sets of priors in both training and test data to create a ROC curve. Unfortunately, the “averaged” ROC curves looked weird, forming V-shape which is not usual. Another way to be tried would be applying different sets of cutoff to a single prediction. That results in different assignments to matching and non-matching for the same posterior class probabilities as done in <code>randomForest</code> with <code>cutoff</code>. However, it doen’t seem to be necessarily more reasonable than the former approach.</li>
+</ul>
 <pre><code>## $`Group Means`
 ## [1] 1.0 1.5
 ## 
